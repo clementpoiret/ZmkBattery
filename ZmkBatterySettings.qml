@@ -9,6 +9,7 @@ PluginSettings {
     pluginId: "zmkBattery"
 
     readonly property string discoverCommand: "bluetoothctl devices"
+    readonly property string zmkBatteryGuideUrl: "https://v0-3-branch.zmk.dev/docs/config/battery"
     property bool discoverCommandCopied: false
 
     Timer {
@@ -31,6 +32,25 @@ PluginSettings {
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
+    }
+
+    StyledText {
+        width: parent.width
+        text: "GATT setup required"
+        font.pixelSize: Theme.fontSizeLarge
+        font.weight: Font.Medium
+        color: Theme.surfaceText
+    }
+
+    StyledText {
+        width: parent.width
+        textFormat: Text.RichText
+        text: "The keyboard must be connected with its GATT services resolved. To expose both halves, enable peripheral battery fetching and proxying in ZMK. <a href=\"" + root.zmkBatteryGuideUrl + "\">Open the ZMK battery configuration guide</a>."
+        linkColor: Theme.primary
+        font.pixelSize: Theme.fontSizeSmall
+        color: Theme.surfaceVariantText
+        wrapMode: Text.WordWrap
+        onLinkActivated: link => Qt.openUrlExternally(link)
     }
 
     StringSetting {
@@ -58,7 +78,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "Run this command and copy the name shown after your keyboard's Bluetooth address into the Keyboard name field above."
+        text: "Copy and paste this command into a terminal, then copy the name shown after your keyboard's Bluetooth address into the Keyboard name field above."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
@@ -93,7 +113,7 @@ PluginSettings {
             iconName: root.discoverCommandCopied ? "check" : "content_copy"
             iconColor: root.discoverCommandCopied ? Theme.success : Theme.surfaceVariantText
             backgroundColor: "transparent"
-            tooltipText: "Copy command"
+            tooltipText: root.discoverCommandCopied ? "Command copied" : "Copy command"
             onClicked: {
                 Quickshell.execDetached([
                     "sh",
@@ -106,17 +126,6 @@ PluginSettings {
                 copiedReset.restart();
             }
         }
-    }
-
-    StyledText {
-        width: parent.width
-        textFormat: Text.RichText
-        text: "To report both halves, configure ZMK to fetch and proxy the peripheral battery. Follow <a href=\"https://v0-3-branch.zmk.dev/docs/config/battery\">https://v0-3-branch.zmk.dev/docs/config/battery</a>."
-        linkColor: Theme.primary
-        font.pixelSize: Theme.fontSizeSmall
-        color: Theme.surfaceVariantText
-        wrapMode: Text.WordWrap
-        onLinkActivated: link => Qt.openUrlExternally(link)
     }
 
     SliderSetting {
@@ -174,7 +183,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "The keyboard must be connected with its GATT services resolved. The plugin uses BlueZ through busctl and requires bash and jq."
+        text: "The plugin uses BlueZ through busctl and requires bash and jq."
         font.pixelSize: Theme.fontSizeSmall
         color: Theme.surfaceVariantText
         wrapMode: Text.WordWrap
