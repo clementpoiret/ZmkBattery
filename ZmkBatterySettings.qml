@@ -155,7 +155,7 @@ PluginSettings {
         label: "Central label"
         description: "Name shown beside the central battery; leave empty to show only its percentage"
         placeholder: "No label"
-        defaultValue: "central"
+        defaultValue: "C"
     }
 
     StringSetting {
@@ -163,7 +163,7 @@ PluginSettings {
         label: "Peripheral label"
         description: "Name shown beside Peripheral 0; leave empty to show only its percentage"
         placeholder: "No label"
-        defaultValue: "peripheral 0"
+        defaultValue: "P"
     }
 
     Rectangle {

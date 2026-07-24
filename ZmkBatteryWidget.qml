@@ -11,8 +11,8 @@ PluginComponent {
     property string keyboardName: pluginData.keyboardName || "Corne-ish Zen"
     property int refreshSeconds: Math.max(10, Number(pluginData.refreshInterval || 60))
     property int warningThreshold: Math.max(1, Math.min(99, Number(pluginData.warningThreshold || 20)))
-    property string centralLabel: String(pluginData.centralLabel ?? "central").trim()
-    property string peripheralLabel: String(pluginData.peripheralLabel ?? "peripheral 0").trim()
+    property string centralLabel: String(pluginData.centralLabel ?? "C").trim()
+    property string peripheralLabel: String(pluginData.peripheralLabel ?? "P").trim()
 
     property int centralLevel: -1
     property int peripheralLevel: -1
