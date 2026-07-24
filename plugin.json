@@ -1,0 +1,28 @@
+{
+  "id": "zmkBattery",
+  "name": "ZMK Battery",
+  "description": "Shows central and peripheral battery levels for a ZMK split keyboard",
+  "version": "1.2.0",
+  "author": "ayak",
+  "license": "MIT",
+  "icon": "keyboard",
+  "type": "widget",
+  "capabilities": [
+    "dankbar-widget",
+    "process"
+  ],
+  "component": "./ZmkBatteryWidget.qml",
+  "settings": "./ZmkBatterySettings.qml",
+  "startupCheck": "./ZmkBatteryStartupCheck.qml",
+  "requires_dms": ">=1.5.0",
+  "dependencies": [
+    "bash",
+    "busctl",
+    "jq"
+  ],
+  "permissions": [
+    "process",
+    "settings_read",
+    "settings_write"
+  ]
+}
