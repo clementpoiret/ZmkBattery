@@ -3,18 +3,25 @@
 # Override with ZMK_KEYBOARD_NAME or pass the keyboard name as the first argument.
 keyboard_name="${1:-${ZMK_KEYBOARD_NAME:-Corne-ish Zen}}"
 
-battery_uuid="00002a19-0000-1000-8000-00805f9b34fb"
-description_uuid="00002901-0000-1000-8000-00805f9b34fb"
-central_path=
-peripheral_0_path=
+readonly battery_uuid="00002a19-0000-1000-8000-00805f9b34fb"
+readonly description_uuid="00002901-0000-1000-8000-00805f9b34fb"
 
-print_result() {
-    printf 'central: %s peripheral 0: %s\n' "${1:---%}" "${2:---%}"
+print_empty() {
+    printf '[]\n'
 }
 
-if ! command -v busctl >/dev/null || ! command -v jq >/dev/null; then
-    print_result
-    exit
+fail() {
+    printf 'getBattery.sh: %s\n' "$1" >&2
+    print_empty
+    exit 1
+}
+
+if ! command -v busctl >/dev/null; then
+    fail "busctl is required"
+fi
+
+if ! command -v jq >/dev/null; then
+    fail "jq is required"
 fi
 
 objects=$(
@@ -24,10 +31,7 @@ objects=$(
         org.freedesktop.DBus.ObjectManager \
         GetManagedObjects \
         2>/dev/null
-) || {
-    print_result
-    exit
-}
+) || fail "could not query BlueZ objects"
 
 device_path=$(
     jq -r --arg name "$keyboard_name" '
@@ -48,23 +52,53 @@ device_path=$(
         | last
         | .path // empty
     ' <<< "$objects"
-)
+) || fail "could not parse BlueZ objects"
 
 if [[ -z $device_path ]]; then
-    print_result
+    print_empty
     exit
 fi
 
-while IFS=$'\t' read -r role path; do
-    case $role in
-        central)
-            central_path=$path
-            ;;
-        "peripheral 0")
-            peripheral_0_path=$path
-            ;;
-    esac
-done < <(
+read_value() {
+    local path=$1
+
+    busctl --system --timeout=3s --json=short call \
+        org.bluez \
+        "$path" \
+        org.bluez.GattCharacteristic1 \
+        ReadValue \
+        'a{sv}' 0 \
+        2>/dev/null |
+        jq -er '
+            .data[0]
+            | select(length == 1)
+            | .[0]
+            | select(. >= 0 and . <= 100)
+        '
+}
+
+read_description() {
+    local path=$1
+
+    busctl --system --timeout=3s --json=short call \
+        org.bluez \
+        "$path" \
+        org.bluez.GattDescriptor1 \
+        ReadValue \
+        'a{sv}' 0 \
+        2>/dev/null |
+        jq -jer '
+            .data[0]
+            | map(select(. != 0))
+            | implode
+            | select(length > 0)
+        '
+}
+
+result='[]'
+peripheral_ordinal=0
+
+characteristics=$(
     jq -r \
         --arg device "$device_path" \
         --arg battery_uuid "$battery_uuid" \
@@ -89,48 +123,55 @@ done < <(
                 (.value["org.bluez.GattDescriptor1"].UUID.data? // "")
                 == $description_uuid
             )
-        ] as $descriptions
+            | .key
+        ]
         | [
-            (if ($descriptions | length) == 0
-                then "central"
-                else "peripheral 0"
-            end),
-            $characteristic
+            $characteristic,
+            (first // "")
         ]
         | @tsv
     ' <<< "$objects"
-)
+) || fail "could not enumerate battery characteristics"
 
-read_battery() {
-    local value
+while IFS=$'\t' read -r characteristic descriptor; do
+    [[ -n $characteristic ]] || continue
 
-    [[ -n $1 ]] || {
-        printf '%s' '--%'
-        return
-    }
+    level=$(read_value "$characteristic") || level=null
 
-    value=$(
-        busctl --system --timeout=3s --json=short call \
-            org.bluez \
-            "$1" \
-            org.bluez.GattCharacteristic1 \
-            ReadValue \
-            'a{sv}' 0 \
-            2>/dev/null |
-            jq -er '
-                .data[0]
-                | select(length == 1)
-                | .[0]
-                | select(. >= 0 and . <= 100)
-            '
-    ) || {
-        printf '%s' '--%'
-        return
-    }
+    if [[ -z $descriptor ]]; then
+        id=central
+        name=Central
+        order=-1
+    else
+        description=$(read_description "$descriptor") || description=
+        name="${description:-Peripheral $peripheral_ordinal}"
 
-    printf '%d%%' "$value"
-}
+        if [[ $description =~ ^[Pp]eripheral[[:space:]]+([0-9]+)$ ]]; then
+            peripheral_number=${BASH_REMATCH[1]}
+            id="peripheral:$peripheral_number"
+            order=$peripheral_number
+        else
+            id="peripheral:${description:-$peripheral_ordinal}"
+            order=$((100000 + peripheral_ordinal))
+        fi
 
-print_result \
-    "$(read_battery "$central_path")" \
-    "$(read_battery "$peripheral_0_path")"
+        ((peripheral_ordinal += 1))
+    fi
+
+    result=$(
+        jq -c \
+            --arg id "$id" \
+            --arg name "$name" \
+            --argjson level "$level" \
+            --argjson order "$order" \
+            '. + [{
+                id: $id,
+                name: $name,
+                level: $level,
+                _order: $order
+            }]' \
+            <<< "$result"
+    ) || fail "could not build battery result"
+done <<< "$characteristics"
+
+jq -c 'sort_by(._order, .name) | map(del(._order))' <<< "$result"

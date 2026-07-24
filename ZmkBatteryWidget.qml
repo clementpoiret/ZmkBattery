@@ -11,37 +11,76 @@ PluginComponent {
     property string keyboardName: pluginData.keyboardName || "Corne-ish Zen"
     property int refreshSeconds: Math.max(10, Number(pluginData.refreshInterval || 60))
     property int warningThreshold: Math.max(1, Math.min(99, Number(pluginData.warningThreshold || 20)))
-    property string centralLabel: String(pluginData.centralLabel ?? "C").trim()
-    property string peripheralLabel: String(pluginData.peripheralLabel ?? "P").trim()
+    property var labelOverrides: parseLabelOverrides(pluginData.batteryLabels)
 
-    property int centralLevel: -1
-    property int peripheralLevel: -1
+    property var batteries: []
     property bool isLoading: true
     property bool parsedOutput: false
+    property string outputBuffer: ""
     property string lastUpdated: ""
     property string errorText: ""
     property string scriptPath: PluginService.pluginDirectory + "/ZmkBattery/getBattery.sh"
 
-    readonly property bool hasCentral: centralLevel >= 0
-    readonly property bool hasPeripheral: peripheralLevel >= 0
-    readonly property bool hasBattery: hasCentral || hasPeripheral
+    readonly property bool hasBattery: batteries.length > 0
     readonly property int lowestLevel: {
-        if (hasCentral && hasPeripheral)
-            return Math.min(centralLevel, peripheralLevel);
-        if (hasCentral)
-            return centralLevel;
-        if (hasPeripheral)
-            return peripheralLevel;
-        return -1;
+        var lowest = 101;
+        for (var i = 0; i < batteries.length; i++) {
+            var level = batteries[i].level;
+            if (root.validLevel(level))
+                lowest = Math.min(lowest, level);
+        }
+        return lowest <= 100 ? lowest : -1;
     }
     readonly property color statusColor: batteryColor(lowestLevel)
-    readonly property string centralText: hasCentral ? centralLevel + "%" : "--%"
-    readonly property string peripheralText: hasPeripheral ? peripheralLevel + "%" : "--%"
 
     pillClickAction: () => refreshBattery()
 
+    function parseLabelOverrides(value) {
+        if (!value)
+            return {};
+
+        try {
+            var parsed = typeof value === "string" ? JSON.parse(value) : value;
+            return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+                ? parsed
+                : {};
+        } catch (error) {
+            console.warn("[zmkBattery] Invalid battery label overrides:", error);
+            return {};
+        }
+    }
+
+    function hasOverride(id) {
+        return Object.prototype.hasOwnProperty.call(labelOverrides, id);
+    }
+
+    function batteryLabel(battery) {
+        if (hasOverride(battery.id))
+            return String(labelOverrides[battery.id]).trim();
+
+        if (battery.id === "central" && pluginData.centralLabel !== undefined)
+            return String(pluginData.centralLabel).trim();
+
+        if (battery.id === "peripheral:0" && pluginData.peripheralLabel !== undefined)
+            return String(pluginData.peripheralLabel).trim();
+
+        return String(battery.name || battery.id).trim();
+    }
+
+    function validLevel(level) {
+        return typeof level === "number"
+            && isFinite(level)
+            && Math.floor(level) === level
+            && level >= 0
+            && level <= 100;
+    }
+
+    function levelText(level) {
+        return validLevel(level) ? level + "%" : "--%";
+    }
+
     function batteryColor(level) {
-        if (level < 0)
+        if (!validLevel(level))
             return Theme.surfaceVariantText;
         if (level <= 10)
             return Theme.error;
@@ -50,14 +89,41 @@ PluginComponent {
         return Theme.primary;
     }
 
-    function parseOutput(line) {
-        var match = line.match(/^central:\s*(\d+|--)%\s+peripheral 0:\s*(\d+|--)%$/);
-        if (!match)
-            return;
+    function parseOutput(output) {
+        var parsed;
 
-        centralLevel = match[1] === "--" ? -1 : parseInt(match[1], 10);
-        peripheralLevel = match[2] === "--" ? -1 : parseInt(match[2], 10);
-        parsedOutput = true;
+        try {
+            parsed = JSON.parse(output);
+        } catch (error) {
+            console.warn("[zmkBattery] Invalid battery JSON:", error);
+            return false;
+        }
+
+        if (!Array.isArray(parsed))
+            return false;
+
+        var normalized = [];
+        var seenIds = {};
+
+        for (var i = 0; i < parsed.length; i++) {
+            var item = parsed[i];
+            if (!item || typeof item.id !== "string" || !item.id.length
+                    || typeof item.name !== "string" || !item.name.length
+                    || Object.prototype.hasOwnProperty.call(seenIds, item.id)
+                    || (item.level !== null && !validLevel(item.level))) {
+                return false;
+            }
+
+            seenIds[item.id] = true;
+            normalized.push({
+                id: item.id,
+                name: item.name,
+                level: item.level
+            });
+        }
+
+        batteries = normalized;
+        return true;
     }
 
     function refreshBattery() {
@@ -65,6 +131,7 @@ PluginComponent {
             return;
 
         parsedOutput = false;
+        outputBuffer = "";
         errorText = "";
         isLoading = true;
         batteryProcess.running = true;
@@ -77,7 +144,7 @@ PluginComponent {
         running: false
 
         stdout: SplitParser {
-            onRead: data => root.parseOutput(data.trim())
+            onRead: data => root.outputBuffer += data + "\n"
         }
 
         stderr: SplitParser {
@@ -89,10 +156,10 @@ PluginComponent {
 
         onExited: (exitCode, exitStatus) => {
             root.isLoading = false;
+            root.parsedOutput = exitCode === 0 && root.parseOutput(root.outputBuffer.trim());
 
-            if (exitCode !== 0 || !root.parsedOutput) {
-                root.centralLevel = -1;
-                root.peripheralLevel = -1;
+            if (!root.parsedOutput) {
+                root.batteries = [];
                 root.errorText = "Battery query failed";
                 return;
             }
@@ -148,42 +215,48 @@ PluginComponent {
                 anchors.verticalCenter: parent.verticalCenter
 
                 StyledText {
-                    visible: root.centralLabel.length > 0
-                    text: root.centralLabel
+                    visible: root.batteries.length === 0
+                    text: root.isLoading ? "…" : "--%"
                     font.pixelSize: Theme.fontSizeSmall
+                    font.weight: Font.DemiBold
                     color: Theme.surfaceVariantText
                     anchors.verticalCenter: parent.verticalCenter
                 }
 
-                StyledText {
-                    text: root.isLoading && !root.hasBattery ? "…" : root.centralText
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.weight: Font.DemiBold
-                    color: root.batteryColor(root.centralLevel)
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                Repeater {
+                    model: root.batteries
 
-                StyledText {
-                    text: "·"
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.outline
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                    Row {
+                        required property int index
+                        required property var modelData
+                        readonly property string displayLabel: root.batteryLabel(modelData)
+                        spacing: Theme.spacingXS
+                        anchors.verticalCenter: parent.verticalCenter
 
-                StyledText {
-                    visible: root.peripheralLabel.length > 0
-                    text: root.peripheralLabel
-                    font.pixelSize: Theme.fontSizeSmall
-                    color: Theme.surfaceVariantText
-                    anchors.verticalCenter: parent.verticalCenter
-                }
+                        StyledText {
+                            visible: index > 0
+                            text: "·"
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.outline
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
 
-                StyledText {
-                    text: root.isLoading && !root.hasBattery ? "…" : root.peripheralText
-                    font.pixelSize: Theme.fontSizeSmall
-                    font.weight: Font.DemiBold
-                    color: root.batteryColor(root.peripheralLevel)
-                    anchors.verticalCenter: parent.verticalCenter
+                        StyledText {
+                            visible: parent.displayLabel.length > 0
+                            text: parent.displayLabel
+                            font.pixelSize: Theme.fontSizeSmall
+                            color: Theme.surfaceVariantText
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+
+                        StyledText {
+                            text: root.levelText(modelData.level)
+                            font.pixelSize: Theme.fontSizeSmall
+                            font.weight: Font.DemiBold
+                            color: root.batteryColor(modelData.level)
+                            anchors.verticalCenter: parent.verticalCenter
+                        }
+                    }
                 }
             }
         }
@@ -205,21 +278,27 @@ PluginComponent {
                 anchors.horizontalCenter: parent.horizontalCenter
 
                 StyledText {
-                    text: (root.centralLabel.length > 0 ? root.centralLabel + " " : "") +
-                        (root.isLoading && !root.hasBattery ? "…" : root.centralText)
+                    visible: root.batteries.length === 0
+                    text: root.isLoading ? "…" : "--%"
                     font.pixelSize: Math.max(8, Math.round(Theme.fontSizeSmall * 0.8))
                     font.weight: Font.DemiBold
-                    color: root.batteryColor(root.centralLevel)
+                    color: Theme.surfaceVariantText
                     anchors.horizontalCenter: parent.horizontalCenter
                 }
 
-                StyledText {
-                    text: (root.peripheralLabel.length > 0 ? root.peripheralLabel + " " : "") +
-                        (root.isLoading && !root.hasBattery ? "…" : root.peripheralText)
-                    font.pixelSize: Math.max(8, Math.round(Theme.fontSizeSmall * 0.8))
-                    font.weight: Font.DemiBold
-                    color: root.batteryColor(root.peripheralLevel)
-                    anchors.horizontalCenter: parent.horizontalCenter
+                Repeater {
+                    model: root.batteries
+
+                    StyledText {
+                        required property var modelData
+                        readonly property string displayLabel: root.batteryLabel(modelData)
+                        text: (displayLabel.length > 0 ? displayLabel + " " : "")
+                            + root.levelText(modelData.level)
+                        font.pixelSize: Math.max(8, Math.round(Theme.fontSizeSmall * 0.8))
+                        font.weight: Font.DemiBold
+                        color: root.batteryColor(modelData.level)
+                        anchors.horizontalCenter: parent.horizontalCenter
+                    }
                 }
             }
         }
