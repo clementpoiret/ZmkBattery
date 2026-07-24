@@ -13,7 +13,7 @@ QtObject {
                 }
 
                 done({
-                    title: "ZMK Battery dependencies are missing",
+                    title: "ZmkBattery dependencies are missing",
                     details: "Install bash, systemd (for busctl), and jq, then enable the plugin again."
                 });
             }

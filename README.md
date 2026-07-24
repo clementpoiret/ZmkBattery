@@ -1,4 +1,4 @@
-# ZMK Battery
+# ZmkBattery
 
 A DankMaterialShell bar widget for the central and peripheral battery levels of
 a ZMK split keyboard.
@@ -19,8 +19,8 @@ Characteristic User Description descriptor.
 ## Setup
 
 1. Open **Settings → Plugins** and scan for plugins.
-2. Enable **ZMK Battery**.
-3. Add **ZMK Battery** to the DankBar layout.
+2. Enable **ZmkBattery**.
+3. Add **ZmkBattery** to the DankBar layout.
 4. Open the plugin settings and set **Keyboard name** to the exact Bluetooth
    name or alias shown by `bluetoothctl devices`.
 

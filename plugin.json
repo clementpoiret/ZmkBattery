@@ -1,6 +1,6 @@
 {
   "id": "zmkBattery",
-  "name": "ZMK Battery",
+  "name": "ZmkBattery",
   "description": "Shows central and peripheral battery levels for a ZMK split keyboard",
   "version": "1.2.0",
   "author": "ayak",

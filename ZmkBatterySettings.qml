@@ -20,7 +20,7 @@ PluginSettings {
 
     StyledText {
         width: parent.width
-        text: "ZMK Battery"
+        text: "ZmkBattery"
         font.pixelSize: Theme.fontSizeLarge
         font.weight: Font.Bold
         color: Theme.surfaceText
