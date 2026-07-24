@@ -9,7 +9,7 @@ PluginSettings {
     pluginId: "zmkBattery"
 
     readonly property string discoverCommand: "bluetoothctl devices"
-    readonly property string zmkBatteryGuideUrl: "https://v0-3-branch.zmk.dev/docs/config/battery"
+    readonly property string zmkBatteryGuideUrl: "https://zmk.dev/docs/config/battery"
     property bool discoverCommandCopied: false
 
     Timer {
